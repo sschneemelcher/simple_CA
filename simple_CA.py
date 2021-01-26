@@ -2,17 +2,18 @@ import numpy as np
 import tkinter as tk
 import matplotlib.pyplot as plt
 import datetime
+from matplotlib import cm
 from PIL import Image, ImageTk
 
 window = tk.Tk()
 window.title("simple_CA")
-window.geometry('500x550')
+window.geometry('600x670')
 window.configure(background='black')
-width, height = 500, 500
-size = (50, 50)
-factor = (500//size[0])
+width, height = 600, 600
+size = (width//10, height//10)
+factor = (width//size[0])
 canvas = tk.Canvas(window, width=width, height=height, highlightbackground = "black")
-canvas.place(relx=0.5, y=325, anchor="center")
+canvas.place(relx=0.5, y=370, anchor="center")
 running = 0
 capture = 0
 borders = 0
@@ -24,7 +25,7 @@ def get_neighbours(src, ks): # moore neighbourhood
 				neighbours.append(np.roll(src, (c-(ks[0]//2),t-(ks[1]//2)), axis=[0,1]))
 	return np.sum(neighbours,0)[borders:src.shape[0]-borders, borders:src.shape[1]-borders]
 
-def get_neighbours_vonneumann(src, ks): # moore neighbourhood
+def get_neighbours_vonneumann(src, ks): # von neumann neighbourhood
 	neighbours = []
 	for c in range(ks):
 		neighbours.append(np.roll(src, (c-(ks//2),0), axis=[0,1]))
@@ -32,13 +33,29 @@ def get_neighbours_vonneumann(src, ks): # moore neighbourhood
 		neighbours.append(np.roll(src, (0,t-(ks//2)), axis=[0,1]))
 	return np.sum(neighbours,0)[borders:src.shape[0]-borders, borders:src.shape[1]-borders]
 
+def circular_neighbourhood(src, ks): #approx
+	neighbours = []
+	for c in range(ks[0]-1):
+		for t in range(ks[0]-1):
+			if c != 0 and t !=0 and c != ks[0] and t != ks[1]:
+				neighbours.append(np.roll(src, (c-((ks[0]-1)//2),t-((ks[1]-1)//2)), axis=[0,1]))
+	neighbours.append(np.roll(src, (0-(ks[0]//2),0-(ks[1]//2)), axis=[0,1]))
+	neighbours.append(np.roll(src, (ks[0]-(ks[0]//2),0-(ks[1]//2)), axis=[0,1]))
+	neighbours.append(np.roll(src, (0-(ks[0]//2),ks[1]-(ks[1]//2)), axis=[0,1]))
+	neighbours.append(np.roll(src, (ks[0]-(ks[0]//2),ks[1]-(ks[1]//2)), axis=[0,1]))
+
+	return np.sum(neighbours,0)[borders:src.shape[0]-borders, borders:src.shape[1]-borders]
+
 
 
 def scale_im(arr,factor):
 	return np.kron(arr, np.ones((factor,factor)))
 
-def draw(event):
-	sim[event.y//factor, event.x//factor] = 255
+def draw1(event):
+	sim[min(size[0]-1,event.y//factor), min(size[0]-1,event.x//factor)] = 255
+
+def draw3(event):
+	sim[event.y//factor-1:event.y//factor+1, event.x//factor-1:event.x//factor+1] = 255
 
 def erase(event):
 	sim[event.y//factor, event.x//factor] = 0
@@ -69,7 +86,7 @@ def randomize():
 
 def rule():
 	global rule
-	rule = (rule+1)%4
+	rule = (rule+1)%9
 	rule_text.set(str(rule))
 
 def run():
@@ -104,22 +121,27 @@ button_capture.grid(row=0,column=5)
 capture_text = tk.StringVar(value="off")
 label_capture = tk.Label(window, textvariable=capture_text, bg="black",fg="white", width=3)
 label_capture.grid(row=1,column=5)
-
-
-scaler = tk.Scale(window, from_=0, to=1, resolution=0.05, orient="horizontal", bg="black", fg="white")
+fps_text = tk.StringVar(value="0")
+label_fps = tk.Label(window, textvariable=fps_text, bg="black",fg="white", width=8)
+label_fps.grid(row=0,column=7)
+scaler = tk.Scale(window, from_=0, to=1, resolution=0.01, orient="horizontal", bg="black", fg="white")
 scaler.grid(row=0,column=6)
 scaler.set(0.25)
 sim = np.zeros(size, dtype=np.uint8)
-canvas.bind("<B1-Motion>", draw)
-canvas.bind("<Button-1>", draw)
+canvas.bind("<B1-Motion>", draw3)
+canvas.bind("<Button-1>", draw1)
 canvas.bind("<B3-Motion>", erase)
 canvas.bind("<Button-3>", erase)
 
-
 rule = 0
 last = datetime.datetime.now()
+delta = datetime.datetime.now() - last
 index = 0
+flag = 1
 while True:
+	if flag:
+		fps_text.set(str(int(1/((delta.microseconds/1000000))))+ "fps")
+	flag = 0
 	delta = datetime.datetime.now() - last
 	scaled = scale_im(sim, factor)
 	im = ImageTk.PhotoImage(image=Image.fromarray(scaled))
@@ -131,12 +153,16 @@ while True:
 	window.update()
 	if running and delta.microseconds > scaler.get()*1000000:
 		if rule == 3:
+			#next_state = circular_neighbourhood(np.pad(sim*2, [(borders,borders),(borders,borders)], mode="constant"), (3,3)) - sim
 			next_state = get_neighbours(np.pad(sim, [(borders,borders),(borders,borders)], mode="constant"), (3,3)) - sim
-			#next_state = get_neighbours_vonneumann(sim, 3)
-			sim = (next_state//8+8).astype(np.uint8)
-			#sim = (next_state//4+1).astype(np.uint8)
+		#	next_state = get_neighbours_vonneumann(np.pad(sim, [(borders,borders),(borders,borders)], mode="constant"), 3) - sim
+			print(next_state)	
+		#	sim = ((next_state//12)+8).astype(np.uint8)
+			sim = (next_state//8+1).astype(np.uint8)
+			#sim = (next_state//4+8).astype(np.uint8)
 		else:
 			next_state = get_neighbours(np.pad(sim//255, [(borders,borders),(borders,borders)], mode="constant"), (3,3)) - sim//255
+#			next_state = circular_neighbourhood(np.pad((sim//255)*2, [(borders,borders),(borders,borders)], mode="constant"), (3,3))- sim//255
 #			next_state = get_neighbours(sim//255, (3,3)) - sim//255
 #			next_state = get_neighbours_vonneumann(sim//255, 3) - sim//255
 			if rule == 0:
@@ -145,4 +171,16 @@ while True:
 				sim = np.where(((next_state > 4) | ((next_state == 4) & (sim == 255))), 255, 0) # vote rule
 			elif rule == 2:
 				sim = np.where((((next_state > 1) & (next_state < 4) & (sim == 255)) | ((sim == 0) & (next_state == 3))), 255, 0) # GOL
+			elif rule == 4:
+				for i in range(sim.shape[0], 1)[::-1]:
+					sim[1:i,:] = np.where(sim[i,:] == 0, np.roll(sim[1:i-1,:], 1, axis=0), sim[1:i,:])
+			elif rule == 5:
+				sim = (255*np.exp(sim/255+next_state/255)).astype(np.uint8)
+			elif rule == 6:
+				sim = ((255-sim)*next_state+(255-next_state)*sim).astype(np.uint8)	
+			elif rule == 7:
+				sim = (sim*next_state+(255-next_state)*(255-sim)).astype(np.uint8)	
+			elif rule == 8:
+				sim = (sim*next_state+(255-next_state)*(255-sim)).astype(np.uint8)	
 		last = datetime.datetime.now()
+		flag = 1
