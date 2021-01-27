@@ -10,8 +10,8 @@ window.title("simple_CA")
 window.geometry('600x670')
 window.configure(background='black')
 width, height = 600, 600
-size = (width//10, height//10)
-factor = (width//size[0])
+size = (width//10, height//10, 3)
+factor = (width//size[0], height//size[1], 1)
 canvas = tk.Canvas(window, width=width, height=height, highlightbackground = "black")
 canvas.place(relx=0.5, y=370, anchor="center")
 running = 0
@@ -49,16 +49,16 @@ def circular_neighbourhood(src, ks): #approx
 
 
 def scale_im(arr,factor):
-	return np.kron(arr, np.ones((factor,factor)))
+	return np.kron(arr, np.ones(factor, dtype=np.uint8))
 
 def draw1(event):
-	sim[min(size[0]-1,event.y//factor), min(size[0]-1,event.x//factor)] = 255
+	sim[min(size[0]-1,event.y//factor[0]), min(size[0]-1,event.x//factor[1]), :] = 255
 
 def draw3(event):
-	sim[event.y//factor-1:event.y//factor+1, event.x//factor-1:event.x//factor+1] = 255
+	sim[event.y//factor[0]-1:event.y//factor[0]+1, event.x//factor[1]-1:event.x//factor[1]+1, :] = 255
 
 def erase(event):
-	sim[event.y//factor, event.x//factor] = 0
+	sim[event.y//factor, event.x//factor, :] = np.zeros(3)
 
 def clear():
 	global sim
@@ -82,7 +82,7 @@ def border():
 
 def randomize():
 	global sim
-	sim = np.random.choice([0, 255], size=size, p=[6/10, 4/10])
+	sim = np.random.choice([0, 255], size=size, p=[6/10, 4/10]).astype(np.uint8)
 
 def rule():
 	global rule
@@ -127,6 +127,7 @@ label_fps.grid(row=0,column=7)
 scaler = tk.Scale(window, from_=0, to=1, resolution=0.01, orient="horizontal", bg="black", fg="white")
 scaler.grid(row=0,column=6)
 scaler.set(0.25)
+
 sim = np.zeros(size, dtype=np.uint8)
 canvas.bind("<B1-Motion>", draw3)
 canvas.bind("<Button-1>", draw1)
@@ -147,33 +148,33 @@ while True:
 	im = ImageTk.PhotoImage(image=Image.fromarray(scaled))
 	canvas.create_image(3, 3, anchor="nw", image=im)
 	if capture:
-		plt.imsave("capture/"+str(index)+".jpg", scaled, cmap="gray")
+		plt.imsave("capture/"+str(index)+".jpg", scaled)
 		index+=1
 	window.update_idletasks()
 	window.update()
 	if running and delta.microseconds > scaler.get()*1000000:
 		if rule == 3:
 			#next_state = circular_neighbourhood(np.pad(sim*2, [(borders,borders),(borders,borders)], mode="constant"), (3,3)) - sim
-			next_state = get_neighbours(np.pad(sim, [(borders,borders),(borders,borders)], mode="constant"), (3,3)) - sim
+			next_state = get_neighbours(np.pad(sim, [(borders,borders),(borders,borders),(0,0)], mode="constant"), (3,3)) - sim
 		#	next_state = get_neighbours_vonneumann(np.pad(sim, [(borders,borders),(borders,borders)], mode="constant"), 3) - sim
 			print(next_state)	
 		#	sim = ((next_state//12)+8).astype(np.uint8)
-			sim = (next_state//8+1).astype(np.uint8)
+			sim = (next_state//8+8).astype(np.uint8)
 			#sim = (next_state//4+8).astype(np.uint8)
 		else:
-			next_state = get_neighbours(np.pad(sim//255, [(borders,borders),(borders,borders)], mode="constant"), (3,3)) - sim//255
+			next_state = get_neighbours(np.pad(sim//255, [(borders,borders),(borders,borders),(0,0)], mode="constant"), (3,3)) - sim//255
 #			next_state = circular_neighbourhood(np.pad((sim//255)*2, [(borders,borders),(borders,borders)], mode="constant"), (3,3))- sim//255
 #			next_state = get_neighbours(sim//255, (3,3)) - sim//255
 #			next_state = get_neighbours_vonneumann(sim//255, 3) - sim//255
 			if rule == 0:
-				sim = np.where(((next_state > 4) | ((next_state == 4) & (sim==0))), 255, 0)
+				sim = np.where(((next_state > 4) | ((next_state == 4) & (sim==0))), 255, 0).astype(np.uint8)
 			elif rule == 1:
-				sim = np.where(((next_state > 4) | ((next_state == 4) & (sim == 255))), 255, 0) # vote rule
+				sim = np.where(((next_state > 4) | ((next_state == 4) & (sim == 255))), 255, 0).astype(np.uint8) # vote rule
 			elif rule == 2:
-				sim = np.where((((next_state > 1) & (next_state < 4) & (sim == 255)) | ((sim == 0) & (next_state == 3))), 255, 0) # GOL
+				sim = np.where((((next_state>1)&(next_state<4)&(sim == 255))|((sim == 0)&(next_state==3))),255,0).astype(np.uint8) # GOL
 			elif rule == 4:
 				for i in range(sim.shape[0], 1)[::-1]:
-					sim[1:i,:] = np.where(sim[i,:] == 0, np.roll(sim[1:i-1,:], 1, axis=0), sim[1:i,:])
+					sim[1:i,:] = np.where(sim[i,:] == 0, np.roll(sim[1:i-1,:], 1, axis=0), sim[1:i,:]).astype(np.uint8)
 			elif rule == 5:
 				sim = (255*np.exp(sim/255+next_state/255)).astype(np.uint8)
 			elif rule == 6:
@@ -181,6 +182,6 @@ while True:
 			elif rule == 7:
 				sim = (sim*next_state+(255-next_state)*(255-sim)).astype(np.uint8)	
 			elif rule == 8:
-				sim = (sim*next_state+(255-next_state)*(255-sim)).astype(np.uint8)	
+				sim = ((sim**2)-np.sqrt(next_state-sim)).astype(np.uint8)	
 		last = datetime.datetime.now()
 		flag = 1
